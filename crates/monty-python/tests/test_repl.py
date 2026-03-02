@@ -32,3 +32,19 @@ def test_repl_create_with_start_inputs_feed_stateful():
     assert output == snapshot(None)
     assert repl.feed('counter = counter + 1') == snapshot(None)
     assert repl.feed('counter') == snapshot(1)
+
+
+def test_repl_busy_error():
+    import pytest
+    repl, output = pydantic_monty.MontyRepl.create('', external_functions=['func'])
+    
+    snapshot_output = repl.start('func()')
+    assert isinstance(snapshot_output, pydantic_monty.MontyReplSnapshot)
+    
+    with pytest.raises(RuntimeError) as exc_info:
+        repl.feed('1 + 1')
+    assert str(exc_info.value) == snapshot('REPL is busy')
+
+    with pytest.raises(RuntimeError) as exc_info:
+        repl.start('1 + 1')
+    assert str(exc_info.value) == snapshot('REPL is busy')

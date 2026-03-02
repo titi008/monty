@@ -28,7 +28,7 @@ use crate::{
     limits::{PySignalTracker, extract_limits},
 };
 
-use monty::{ReplContinuationMode, ReplProgress as CoreReplProgress, ReplStartError as CoreReplStartError};
+use monty::ReplProgress as CoreReplProgress;
 
 /// A sandboxed Python interpreter instance.
 ///
@@ -770,7 +770,7 @@ impl PyMontyRepl {
         let print_callback = print_callback.or_else(|| self_ref.print_callback.as_ref().map(|cb| cb.clone_ref(py)));
 
         let mut print_cb;
-        let mut print_writer = match print_callback.as_ref() {
+        let print_writer = match print_callback.as_ref() {
             Some(cb) => {
                 print_cb = CallbackStringPrint::from_py(cb.clone_ref(py));
                 PrintWriter::Callback(&mut print_cb)
@@ -786,6 +786,10 @@ impl PyMontyRepl {
             .try_lock()
             .map_err(|_| PyRuntimeError::new_err("REPL session is currently executing another snippet"))?;
         
+        if let EitherRepl::Done = *repl {
+            return Err(PyRuntimeError::new_err("REPL is busy").into());
+        }
+
         // Temporarily extract the repl
         let repl_state = std::mem::replace(&mut *repl, EitherRepl::Done);
         
@@ -798,14 +802,14 @@ impl PyMontyRepl {
 
         let outcome = py.detach(move || -> PyResult<StartOutcome> {
             match repl_state {
-                EitherRepl::NoLimit(mut r) => {
+                EitherRepl::NoLimit(r) => {
                     let mut pw = print_writer_wrapper.take();
                     match r.start(code, &mut pw) {
                         Ok(p) => Ok(StartOutcome::Progress(EitherReplProgress::NoLimit(p))),
                         Err(err) => Ok(StartOutcome::Error(EitherReplStartError::NoLimit(*err))),
                     }
                 }
-                EitherRepl::Limited(mut r) => {
+                EitherRepl::Limited(r) => {
                     let mut pw = print_writer_wrapper.take();
                     match r.start(code, &mut pw) {
                         Ok(p) => Ok(StartOutcome::Progress(EitherReplProgress::Limited(p))),
